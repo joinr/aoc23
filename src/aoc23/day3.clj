@@ -21,6 +21,7 @@
 (def nums (into #{} (seq "1234567890")))
 
 ;;ugly but works.
+;;TODO use regex + interop for matching with indices.
 (defn extract-syms [xs]
   (let [res (reduce (fn [{:keys [items current iprev] :as acc} [i c]]
               (let [emit-symbol?  (not (nums c))
@@ -82,21 +83,39 @@
                   (assoc :data (if (symbolic string) string (parse-long string)))
                   (dissoc :string))))))
 
+;;possible bug depending on input.  numbers are not guaranteed to be distinct in the
+;;dataset.  this assumes they are.  lucked out.
+;;robust solution projects the entries onto some distinct key,
+;;then collects by distinct id for any operations.
+
+;;we now store a node with a distinct id for neighbor queries.
 (defn as-2d [rows] ;;row major orientation.
-  (reduce (fn [acc {:keys [start end row data]}]
-            (let [oldrow (get acc row {})
-                  inner (reduce (fn [acc j]
-                                  (assoc acc j data))
-                                oldrow (range start (inc end)))]
-              (assoc acc row inner))) {} rows))
+  (let [id (atom -1)]
+    (reduce (fn [acc {:keys [start end row data]}]
+              (let [oldrow (get acc row {})
+                    node  {:id (swap! id inc)
+                           :data data}
+                    inner (reduce (fn [acc j]
+                                    (assoc acc j node))
+                                  oldrow (range start (inc end)))]
+                (assoc acc row inner))) {} rows)))
 
-
-
+;;distinct nodes by id key now.
+(defn distinct-by-id [xs]
+  (->> xs
+       (reduce (fn [acc x]
+                 (if (acc (x :id))
+                   acc
+                   (assoc acc (x :id) x)))
+               {})
+       vals))
+;;lift data id.
 (defn adjacents [x y grid]
   (->> (u/neighbors x y)
        (map (fn [[x y]] (get-in grid [y x])))
-       (filter number?)
-       set))
+       (filter #(-> % :data number?))
+       distinct-by-id
+       (map :data)))
 
 (defn parts-ctx [rows]
   (let [symbols (->> rows (filter (fn [{:keys [data]}] (string? data)))
@@ -117,7 +136,6 @@
        (filter seq)
        (apply concat)
        (reduce +)))
-
 
 ;;part 2
 (defn find-gears [{:keys [symbols grid] :as ctx}]
@@ -163,8 +181,5 @@
 
 
 
-(defn ajacents [x y nums]
-  ;;l,r,above,below,ul,ur,dl,dr
-)
 
 
