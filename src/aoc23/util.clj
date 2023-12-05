@@ -32,10 +32,16 @@
           res)))))
 
 (def ^:dynamic *logging* nil)
+#_
 (defn log [x]
   (when *logging*
     (println x))
   x)
+
+(defmacro log [msg & expr]
+  `(do (when *logging*
+         (println ~msg))
+       ~@expr))
 
 
 (definterface I2D
