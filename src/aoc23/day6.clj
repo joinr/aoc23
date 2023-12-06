@@ -130,3 +130,27 @@ Distance:  940200")
   (->> (u/slurp-resource "day6.txt")
        parse-input2
        (range-ways-to-win)))
+
+
+;;extra credit.
+;;solve using quadratic formula.
+;;v = hold
+;;d = v*t
+;;t = racetime - hold
+;;d = (racetime - hold)*hold
+;;d = racetime*hold - hold^2
+;;hold^2 - race-time*hold + d = 0
+;;x = [-c +/- (b^2 - 4ac)]/2a
+
+(defn quadr [a b c]
+  (let [rad (Math/pow (- (* b b) (* 4 a c)) 0.5)
+        negb (- b)
+        denom (* 2.0 a)]
+    [(/ (- negb rad) denom)
+     (/ (+ negb rad) denom)]))
+
+(defn quadratic-solve [race-time distance]
+  (let [[l r] (quadr 1 (- race-time) (inc distance))]
+    (->> (-  (Math/floor r) (Math/ceil l))
+         inc
+         long)))
