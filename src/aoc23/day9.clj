@@ -12,24 +12,11 @@
        s/split-lines
        (map u/read-as-vector)))
 
-
-(defn vtrim [xs]
-  (let [n (count xs)]
-    (when (>= n 4)
-      (subvec xs 1 (dec n)))))
-
 (defn differences [xs]
   (when (> (count xs) 1)
     (mapv (fn [i]
             (- (xs i) (xs (dec i))))
           (range 1 (count xs)))))
-
-(defn final [xs]
-  (let [n (count xs)
-        l (- (xs 1) (xs 0))
-        r (- (peek xs) (xs (- n 2)))]
-    [l r]))
-
 
 (defn triangle [xs]
   (->> xs
@@ -41,8 +28,6 @@
        reverse
        (reduce (fn [acc xs]
                  (+ acc (peek xs))) 0)))
-
-
 
 (defn next-value [xs]
   (->> xs triangle walk-back))
