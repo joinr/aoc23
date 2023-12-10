@@ -22,6 +22,10 @@
       brackets
       clojure.edn/read-string))
 
+(defn map-kv [fkv m]
+  (reduce-kv (fn [acc k v]
+            (assoc acc k (fkv k v))) m m))
+
 (defn memo-1 [f]
   (let [^java.util.HashMap cache (java.util.HashMap.)]
     (fn [x]
@@ -110,7 +114,7 @@
                          (filterv (fn [[x y]]
                                     (and (>= x 0) (< x w)
                                          (>= y 0) (< y h))))
-                         (map (fn [[x y]]
+                         (mapv (fn [[x y]]
                                 (xy->idx w h x y))))]
            [(xy->idx w h x y) [x y] nebs]))
        (reduce (fn [acc [n xy nebs]]
@@ -183,3 +187,11 @@
     (if (< (Math/abs diff) 10E-6)
       true
       false)))
+
+(defmacro finite-loop [n bindings & body]
+  `(let [limit# (atom 0)
+         n# ~n]
+     (loop ~bindings
+        (if (< (swap! limit# inc) n#)
+          ~@body
+          (println [:exceded-limit])))))
