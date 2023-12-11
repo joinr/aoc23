@@ -131,37 +131,45 @@ LJ.LJ")
         dy (- y2 y1)]
     (if (zero? dx) ;;vertical
       (if (pos? dy)
-        :up
-        :down)
+        :down
+        :up)
       (if (pos? dx)
         :right
         :left))))
 
-(defn clamp
-  ([l r n]
-   (cond (< n l) l
-        (> n r) r
-        :else n))
-  ([r n] (clamp 0 r n)))
-
+;;clockwise
 (defn right-neighbor [dir [x y]]
+    (case dir
+      :up    [(inc x) y]
+      :down  [(dec x) y]
+      :left  [x (dec y)]
+      :right [x (inc y)] ))
+
+;;counterclockwise
+(defn left-neighbor [dir [x y]]
   (case dir
     :up    [(dec x) y]
-    :down  [(inc x) y]
-    :left  [x (dec y)]
-    :right [x (inc y)]))
+    :down  [(inc x) y] 
+    :left  [x (inc y)]
+    :right [x (dec y)] ))
 
 (defn clockwise-path [{:keys [init data grid w h] :as ctx} path]
-  (let [ path (conj path init)
+  (let [path (conj path init)
         init (first path)
-        coord (-> init grid :coord)]
-    (->> path
-         (map (fn [nd] (get-in grid [nd :coord])))
+        coord (-> init grid :coord)
+        pathcoords  (->> path
+                         (map (fn [nd] (get-in grid [nd :coord]))))
+        dirfn (case (inside-dir (first pathcoords) (second pathcoords))
+                (:up :right) right-neighbor
+                left-neighbor)
+        _ (println [:dir (if (= dirfn right-neighbor) :clockwise :counter)])]
+    (->> pathcoords
          (partition 2 1)
          (mapv (fn [[l r]]
                 (let [dir (inside-dir l r)
-                      rr  (right-neighbor dir r)
-                      #_#__ (println [dir
+                      rr  (dirfn dir r)
+                      #_#_
+                      - (println [dir
                                  r (get-in data [(r 1) (r 0)])
                                   rr (get-in data [(rr 1) (rr 0)])])]
                   rr
@@ -211,6 +219,18 @@ LJ.LJ")
 .|..|.|..|.
 .L--J.L--J.
 ...........")
+
+(def sample2
+".F----7F7F7F7F-7....
+.|F--7||||||||FJ....
+.||.FJ||||||||L7....
+FJL7L7LJLJ||LJ.L-7..
+L--J.L7...LJS7F-7L7.
+....F-J..F7FJ|L7L7L7
+....L7.F7||L7|.L7L7|
+.....|FJLJ|FJ|F7|.LJ
+....FJL-7.||.||||...
+....L---J.LJ.LJLJ...")
 (defn solve2 [txt]
   (let [{:keys [grid] :as ctx}
           (->> txt
