@@ -104,7 +104,7 @@
   [(rem n w) (quot n h)])
 
 (defn xy->idx [w h x y]
-  (+ x (* y h)))
+  (+ x (* y w)))
 
 (defn adjacency [w h & {:keys [neighbors-fn] :or
                         {neighbors-fn neighbors}}]
