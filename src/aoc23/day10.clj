@@ -10,6 +10,13 @@
 .L-J.
 .....")
 
+(def complex
+"7-F7-
+.FJ|7
+SJLL7
+|F--J
+LJ.LJ")
+
 ;;destinations for four cardinal directions.
 (def lefts  #{\-  \L  \F \S})
 (def rights #{\-  \J  \7 \S} )
@@ -38,8 +45,9 @@
    \.  {}})
 
 (defn pipe-neighbor [data x y]
-  (let [[right left up down :as nebs]   (u/neighbors4 x y)
-        [rc lc uc dc :as cs] (mapv (fn [[x y]]
+  (let [[right left down up #_#_up down :as nebs]   (u/neighbors4 x y)
+        ;;symbol connectedness is inverted.
+        [rc lc dc uc #_#_uc dc :as cs] (mapv (fn [[x y]]
                                      (get-in data [y x])) nebs)
         c             (get-in data [y x]) ;;row major ugh!
         {:keys [u d l r]} (valid c)]
@@ -49,7 +57,6 @@
                      (when (and l lc (l lc)) left)
                      (when (and u uc (u uc)) up)
                      (when (and d dc (d dc)) down)]]
-        (println [{:c c :x x :y y :nebs nebs :cs cs} lc [c] rc   uc [c] dc r l u d viables])
         ;;now merge the connectedness together.
         (->> viables
              (filter identity)
@@ -64,26 +71,65 @@
                   (reduce-kv (fn [acc k {:keys [coord] :as node}]
                                (assoc acc k (assoc node :data (get-in data coord))))
                              {}))]
-    {:init (->> grid (some (fn [[k {:keys [data]}]]
+    {:data data
+     :init (->> grid (some (fn [[k {:keys [data]}]]
                              (when (= data \S)
                                k)))) :grid grid}))
 
 (defn depth-walk [{:keys [grid init]}]
-  (u/finite-loop 25
-      [pending (list {:path [init] :visited #{} :distance 0})]
-    (if-let [nxt (first pending)]
-      (let [{:keys [path visited distance]} nxt
-            current (peek path)]
-        (if (and (= current init) (pos? distance))
-          nxt
-          (let [_       (println nxt)
-                visited (conj visited current)
-                blocks  (-> grid (get-in [current :data]) blocked)
-                nebs    (->> (get-in grid [current :neighbors])
-                             (filter (fn [n] (not (visited n)))))]
-            (recur (into pending (map (fn [neb]
-                                        {:path (conj path neb)
-                                         :visited (conj visited neb)
-                                         :distance (inc distance)})
-                                      nebs))))))
-      (println [:failed]))))
+  (let [init-state {:from init
+                    :spt  {init init}
+                    :dist {init 0}
+                    :fringe (list [init 0])}]
+    (loop
+        [{:keys [spt dist fringe] :as state} init-state]
+    (if-let [[current weight] (first fringe)]
+      (if (and (not= current init) (dist current))
+        (recur (update state :fringe pop))
+        (let [nebs    (->> (get-in grid [current :neighbors])
+                           (filter (fn [n] (not (dist n))))
+                           (map (fn [nd] [nd (inc weight)])))]
+          (recur {:fringe (into (pop fringe) nebs)
+                  :spt    (reduce (fn [acc [nd _]]
+                                    (assoc acc nd current)) spt nebs)
+                  :dist  (assoc dist current weight)})))
+        state))))
+
+(defn get-path [{:keys [from spt dist]}]
+  (let [[furthest d] (->> dist (sort-by (comp - val)) first)]
+    (loop [path (list furthest)]
+      (let [nxt (spt (peek path))]
+        (if (= nxt (peek path))
+          (vec  path)
+          (recur (conj path nxt)))))))
+
+(defn furthest [path]
+  (let [steps  (subvec path 1)]
+    (inc (quot (count steps) 2))))
+
+(defn solve1 []
+  (->> (u/slurp-resource "day10.txt")
+       parse-input
+       depth-walk
+       get-path
+       furthest))
+
+;;part2
+;;find the path.
+;;order it clockwise.
+;;define inside as being to the right.
+;;walk the path, collecting inside adjacent nodes (both \. and "right")
+;;flood fill from these nodes, where neighbors are dots.
+
+
+(defn inside-dir [[x1 y2]]
+  )
+(defn clockwise-path [{:keys [data grid] :as ctx}]
+  (let [path  (->> ctx
+                   depth-walk
+                   get-path)
+        init (first path)
+        coord (-> init grid :coord)
+        origin [(- )]]
+    {:coord coord
+     :path  path}))
