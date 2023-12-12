@@ -126,87 +126,44 @@ LJ.LJ")
 ;;flood fill from these nodes, where neighbors are dots.
 
 
-(defn inside-dir [[x1 y1] [x2 y2]]
-  (let [dx (- x2 x1)
-        dy (- y2 y1)]
-    (if (zero? dx) ;;vertical
-      (if (pos? dy)
-        :down
-        :up)
-      (if (pos? dx)
-        :right
-        :left))))
+(defn get-S [{:keys [grid init]} path]
+  (let [[l start r] [(last path) init (second path)]
+        [s1 s2 :as shapes] (mapv #(-> % grid :data) [l r])
+        res   (case shapes
+                [\J \7] \|
+                [\| \|] \|
+                [\- \-] \-
+                [\L \J] \-
+                [\- \J] \-
+                [\F \|] \|
+                (throw (ex-info "unknown pair" {:in [s1 s2]})))]
+    (println [:replacing [s1 \S s2] :with [s1 res s2]])
+    res))
 
-;;clockwise
-(defn right-neighbor [dir [x y]]
-    (case dir
-      :up    [(inc x) y]
-      :down  [(dec x) y]
-      :left  [x (dec y)]
-      :right [x (inc y)] ))
-
-;;counterclockwise
-(defn left-neighbor [dir [x y]]
-  (case dir
-    :up    [(dec x) y]
-    :down  [(inc x) y] 
-    :left  [x (inc y)]
-    :right [x (dec y)] ))
-
-(defn clockwise-path [{:keys [init data grid w h] :as ctx} path]
-  (let [path (conj path init)
-        init (first path)
-        coord (-> init grid :coord)
-        pathcoords  (->> path
-                         (map (fn [nd] (get-in grid [nd :coord]))))
-        dirfn (case (inside-dir (first pathcoords) (second pathcoords))
-                (:up :right) right-neighbor
-                left-neighbor)
-        _ (println [:dir (if (= dirfn right-neighbor) :clockwise :counter)])]
-    (->> pathcoords
-         (partition 2 1)
-         (mapv (fn [[l r]]
-                (let [dir (inside-dir l r)
-                      rr  (dirfn dir r)
-                      #_#_
-                      - (println [dir
-                                 r (get-in data [(r 1) (r 0)])
-                                  rr (get-in data [(rr 1) (rr 0)])])]
-                  rr
-                 ))))))
-
-(defn inner-seeds [{:keys [init data grid pruned] :as ctx} path]
-  (let [coord->nd (reduce-kv (fn [acc n {:keys [coord]}]
-                               (assoc acc coord n)) {} pruned)
-        seeds (clockwise-path ctx path)]
-    (->> seeds
-         distinct
-         (map (fn [coord]
-                (let [nd (-> coord coord->nd)]
-                  (assoc (pruned nd) :nd nd))))
-         (filter (fn [ {:keys [data]}]
-                   (= data \.))))))
-
-(defn flood-fill [{:keys [init data grid w h]} seeds]
-  (loop [pending (into '() seeds)
-         acc     []
-         visited #{}]
-    (if-let [nxt (first pending)]
-      (let [{:keys [coord neighbors data]} nxt]
-        (cond (visited coord)  (recur (pop pending) acc visited)
-              (not= data \.)  (recur (pop pending) acc (conj visited coord))
-              :else ;valid
-              (let [visited (conj visited coord)
-                    nebs    (->> (u/neighbors4 (coord 0) (coord 1))
-                                 (filterv  (fn [[x y]]
-                                             (and (>= x 0) (< x w)
-                                                  (>= y 0) (< y h)))))
-                    newpend (for [[x y] nebs]
-                              (grid (u/xy->idx w h x y)))]
-                (recur (-> pending pop (into newpend))
-                       (conj acc coord)
-                       visited))))
-      acc)))
+(defn hscan [{:keys [w h grid data init] :as ctx} path]
+  (let [knowns (->> path
+                    (map (fn [nd] (-> nd grid :coord)))
+                    set)
+        vert #{\F \7 \|}
+        new-S (get-S ctx path)
+        [x y] (get-in grid [init :coord])
+        data (assoc-in data [y x] new-S)]
+      (->>  (for [y (range h)]
+              (->> (range w)
+                   (reduce (fn [{:keys [inside acc prev] :as res } x]
+                             (let [c      (get-in data [y x])
+                                   resnxt (assoc res :prev c)
+                                   known?  (knowns [x y])]
+                               (if known?
+                                 (if  (not (vert c))
+                                   resnxt
+                                   (update resnxt :inside not))
+                                 (if inside
+                                   (update resnxt :acc conj [x y])
+                                   resnxt))))
+                           {:inside false :acc [] :prev nil})
+                   :acc))
+            (apply concat))))
 
 
 (def isample
@@ -231,22 +188,42 @@ L--J.L7...LJS7F-7L7.
 .....|FJLJ|FJ|F7|.LJ
 ....FJL-7.||.||||...
 ....L---J.LJ.LJLJ...")
+
+(def bigsample
+"FF7FSF7F7F7F7F7F---7
+L|LJ||||||||||||F--J
+FL-7LJLJ||||||LJL-77
+F--JF--7||LJLJIF7FJ-
+L---JF-JLJIIIIFJLJJ7
+|F|F-JF---7IIIL7L|7|
+|FFJF7L7F-JF7IIL---7
+7-L-JL7||F7|L7F-7F7|
+L.L7LFJ|||||FJL7||LJ
+L7JLJL-JLJLJL--JLJ.L"
+  )
+
+(defn render [{:keys [grid w]}]
+  (->> grid  (sort-by key) (partition w)
+       (map (fn [xs]
+              (s/join (map (comp :data val) xs))))
+       (s/join \newline)
+       println))
+
+
+(defn render-path [{:keys [grid w h] :as ctx} p]
+  (->> p
+       (reduce (fn [acc k]
+                 (assoc-in acc [k :data] \* ))
+               grid)
+       (assoc ctx :grid)
+       render))
+
 (defn solve2 [txt]
   (let [{:keys [grid] :as ctx}
           (->> txt
                parse-input)
         path  (-> ctx
                   depth-walk
-                  get-path)
-        known (set path)
-        pruned (->> (reduce-kv  (fn [m nd entry]
-                             (if (known nd)
-                               m
-                               (case (entry  :data)
-                                 \. m
-                                 (assoc m nd (assoc entry :data \#)))))
-                           grid grid)
-                    (assoc ctx :pruned))
-        seeds (inner-seeds pruned path)
-        ]
-    (flood-fill pruned seeds)))
+                  get-path)]
+    (->> (hscan ctx path)
+         count)))

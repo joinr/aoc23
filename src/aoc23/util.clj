@@ -35,6 +35,20 @@
               _ (.put cache x res)]
           res)))))
 
+(defn float= [l r]
+  (let [diff (- l r)]
+    (if (< (Math/abs diff) 10E-6)
+      true
+      false)))
+
+(defmacro finite-loop [n bindings & body]
+  `(let [limit# (atom 0)
+         n# ~n]
+     (loop ~bindings
+       (if (< (swap! limit# inc) n#)
+         ~@body
+         (println [:exceded-limit])))))
+
 (def ^:dynamic *logging* nil)
 #_
 (defn log [x]
@@ -182,16 +196,124 @@
            known)))
 
 
-(defn float= [l r]
-  (let [diff (- l r)]
-    (if (< (Math/abs diff) 10E-6)
-      true
-      false)))
 
-(defmacro finite-loop [n bindings & body]
-  `(let [limit# (atom 0)
-         n# ~n]
-     (loop ~bindings
-        (if (< (swap! limit# inc) n#)
-          ~@body
-          (println [:exceded-limit])))))
+
+
+;;graph stuff.
+;;===========
+(defn multipath [x y]
+  (if (set? x)
+    (conj x y)
+    (conj #{x} y)))
+
+(defn relax
+  ([{:keys [spt dist fringe] :as state} source sink w hw]
+   (let [dfrom (or (dist source) (throw (ex-info "unknown weight!" {:in dist :source source})))
+         wnew  (+ ^long dfrom ^long w)]
+     (if-let [^long wold (dist sink)] ;;known path.
+       (cond (< wnew wold) ;;shorter path
+             {:spt    (assoc spt sink source)
+              :dist   (assoc dist sink wnew)
+              :fringe (push-fringe fringe (+  wnew ^long hw) sink)}
+             (= wnew wold) ;;equal path
+             {:spt  (update spt sink multipath source)
+              :dist dist
+              :fringe fringe}
+             :else ;;no change
+             state)
+       ;;new path
+       {:spt    (assoc spt  sink source)
+        :dist   (assoc dist sink wnew)
+        :fringe (push-fringe fringe (+ wnew ^long hw) sink)})))
+  ([state source sink w] (relax state source sink w 0)))
+
+
+(defn best-first [gr from to & {:keys [make-fringe on-visit weightf]
+                                :or {make-fringe min-pq
+                                     on-visit identity}}]
+  (let [sinks (gr :sinks)
+        nodes (gr :nodes)
+        weightf (or weightf
+                    (fn [nd] ((nodes nd) :weight)))
+        init {:spt  {from from}
+              :dist {from (weightf from)}
+              :fringe (make-fringe [0 from])}]
+    (loop [{:keys [spt dist fringe] :as state} init]
+      (if-let [source (peek-fringe fringe)]
+        (if (= source to)
+          (assoc state :found-path [from to])
+          (let [_ (on-visit source)
+                neighbors  (sinks source)
+                next-state (reduce-kv (fn [acc sink w]
+                                        (relax acc source sink w))
+                                      (update state :fringe pop-fringe)
+                                      (sinks source))]
+            (recur next-state)))
+        state))))
+
+(defn a* [gr from to h & {:keys [make-fringe on-visit weightf]
+                          :or {make-fringe min-pq
+                               on-visit identity}}]
+  (let [sinks (gr :sinks)
+        nodes (gr :nodes)
+        weightf (or weightf
+                    (fn [nd] ((nodes nd) :weight)))
+        init {:spt  {from from}
+              :dist {from (weightf from)}
+              :fringe (make-fringe [0 from])}]
+    (loop [{:keys [spt dist fringe] :as state} init]
+      (if-let [source (peek-fringe fringe)]
+        (if (= source to)
+          (assoc state :found-path [from to])
+          (let [_ (on-visit source)
+                neighbors  (sinks source)
+                next-state (reduce-kv (fn [acc sink w]
+                                        (let [hw (h sink to)]
+                                          (relax acc source sink w hw)))
+                                      (update state :fringe pop-fringe)
+                                      (sinks source))]
+            (recur next-state)))
+        state))))
+
+(defn recover-first-path
+  ([{:keys [spt dist]} from to]
+   (let [xs (->> to
+                 (iterate (fn [nd] (let [pred (spt nd)]
+                                     (if (coll? pred)
+                                       (first pred)
+                                       pred))))
+                 (take-while #(not= % from))
+                 reverse
+                 (into [from]))]
+     ;;need to remove the starting position cost
+     {:path xs :length (- ^long (dist to) ^long (dist from))}))
+  ([{:keys [found-path] :as state}]
+   (when-let [[from to] found-path]
+     (recover-first-path state from to))))
+
+(defn manhattan [w h from to]
+  (let [xy1 (idx->xy w h from)
+        xy2 (idx->xy w h to)]
+    (+ (Math/abs (- ^long (xy2 0) ^long (xy1 0)))
+       (Math/abs (- ^long (xy2 1) ^long (xy1 1))))))
+
+
+(defn manhattan-xy [xy1 xy2]
+    (+ (Math/abs (- ^long (xy2 0) ^long (xy1 0)))
+       (Math/abs (- ^long (xy2 1) ^long (xy1 1)))))
+
+;;given a 1d sequence of entries, corresponding to a grid of w h,
+;;unrolled into a 1d indexing scheme, create a corresponding
+;;graph where the adjacency is determined by the neighborhood
+;;function (typically 4 way or 8 way neighbors), with the weights
+;;supplied by entries.
+(defn entries->graph [entries w h & {:keys [neighbors-fn] :or {neighbors-fn neighbors4}}]
+  (let [adj (adjacency w h :neighbors-fn neighbors-fn)]
+    (reduce-kv (fn [acc nd {:keys [coord neighbors]}]
+                 (-> acc
+                     (assoc-in [:nodes nd] {:weight  (entries nd)
+                                            :coord coord})
+                     (assoc-in [:sinks nd]
+                               (reduce (fn [acc k]
+                                         (assoc acc k (entries k))) {} neighbors))))
+               {:width w :height h} adj)))
