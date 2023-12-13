@@ -14,11 +14,30 @@
 ;;strings then compare them with the base.
 
 
+(defn parse-line [ln]
+  (let [[l r]  (s/split ln #" ")
+        odds   (u/read-as-vector r)
+        length (count l)
+        hashes  (->> odds (reduce +))
+        pads    (dec (count odds))
+        used    (+ hashes pads)
+        slack   (- length used)]
+    {:original l
+     :odds odds
+     :length length
+     :slack slack
+     :bound (inc (count odds))}))
+
 (defn parse-input [txt]
   (->> txt
        s/split-lines
-       (map (fn [ln]
-              (s/split ln #" ")))))
+       (map parse-line)))
+
+;;"###.##.#...."
+;;{:length 12
+;; :evens [0 1 1 4]
+;; :odds  [3 2 1]
+;; :slack 4}
 
 ;;so 1 1 3 ->
 ;; "#" "#" "###"
@@ -40,89 +59,6 @@
 (defn char-at [^CharSequence s ^long n]
   (.charAt s n))
 
-(defn get-piece ^String [^long n]
-  (apply str (repeat n \#)))
-
-(defn try-place [original idx  piece pad]
-  (let [bnd (if pad (unchecked-inc piece) piece)
-        c (char-at original idx)]
-    (when (or (= c \?) (= c \#))
-      ;;is there space?
-      (loop [r   idx
-             n   bnd]
-        (println [r n (char-at original r)])
-        (if (zero? n)
-           (if pad
-             (str (get-piece piece) pad)
-             (get-piece piece))
-          (let [c (char-at original r)]
-            (if (and pad (= n 1))
-              (when  (or (= c \.) (= c \?))
-                (recur (unchecked-inc r) (unchecked-dec n)))
-              (when (or (= c \#) (= c \?))
-                (recur (unchecked-inc r) (unchecked-dec n))))))))))
-
-(defn possible-bounds [original xs]
-  (let [n (count original)
-        pads (dec (count xs))
-        used (reduce + pads xs)]
-    {:length n
-     :slack (- n used)
-     :used   used
-     :widths (conj (mapv inc (butlast xs)) (peek xs))}))
-
-;;slack determines how much drift we have.  there are a constant number of dots
-;;between (the slack).
-
-(defn construct [original xs]
-  (let [{:keys [slack widths]} (possible-bounds xs)
-        n                      (count widths)]
-    (loop [pending (list {:idx 0 :slack slack :n (count widths)
-                          :current ""})
-           acc  []]
-      (if-let [{:keys [idx slack n current] :as state} (first pending)]
-        (let [;;generate neighbors from slack.
-              nebs (for [i (range 0 slack)]
-                     (let [placed (try-place original  )])
-                     )
-              ]
-        )
-        acc))))
-
-
-;;naive combinations.
-(defn combos [original xs]
-  (let [n    (count original)
-        pads (dec (count xs))
-        used (reduce + pads xs)
-        pats (clojure.string/join \.
-               (map (fn [n] (apply str (repeat n \#))) xs))]
-    (str pats (apply str (repeat (- n used) \.)))))
-
-;;add a dot to the left/right of each, and their children, and on,
-;;until we hit a length.
-;;report result.
-(defn generate [length n]
-
-  )
-
-;;"###.##.#...."
-;;{:length 12
-;; :evens [0 1 1 4]
-;; :odds  [3 2 1]
-;; :slack 4}
-
-;;init
-;;{:length 12
-;; :evens }
-
-(for [i (range 0 (inc 4))
-      j (range 1 (inc 4))
-      k (range 1 (inc 4))
-      l (range 0 (inc 4))
-      :when (= (+ i j k l) 6)]
-  [i j k l])
-
 
 ;;for testing
 (defn dots [n]
@@ -131,22 +67,91 @@
 (defn pounds [n]
   (apply str (repeat  n \#)))
 
-(defn gen [{:keys [length odds] :as state }  bound evens slack n current]
-  (if (= n bound) ;;done
-    [current]
-    (let [internal? (< 0 n (dec bound))
-          lb (cond (= n (dec bound))  slack ;;have to distribute remainder.
-                   internal? 1 ;;internal, have to distribute 1.
-                   :else               0)]
-      (->> (for [i (range lb (+ slack (if internal? 2 1)))] ;;internal gets 1 for free.
-             (let [enxt (conj evens i)
-                   snxt (if internal?
-                          (- slack (dec i)) ;;padded already added.
-                          (- slack i))
-                   dots (dots i)
-                   new-string (if (< n (dec bound))
-                                (str current dots (pounds (odds n)))
-                                (str current dots))
-                   _ (println [n i enxt snxt new-string])]
-               (gen state bound enxt snxt (inc n) new-string)))
-           (apply concat)))))
+(defn viable? [^String original  ^long idx ^long dots ^long pounds]
+  (let [bound (count original)]
+    (loop [idx idx
+           dots dots
+           pounds pounds]
+      (cond (pos? dots)
+              (let [c (char-at original idx)]
+                (if (or (= c \.) (= c \?))
+                  (recur (unchecked-inc idx)
+                         (unchecked-dec dots)
+                         pounds)
+                  false))
+            (pos? pounds)
+              (let [c (char-at original idx)]
+                (if (or (= c \#) (= c \?))
+                  (recur (unchecked-inc idx)
+                         dots
+                         (unchecked-dec pounds))
+                  false))
+              :else          true))))
+
+(defn gen
+  ([{:keys [length odds original] :as state }  bound evens slack n current]
+   (if (= n bound) ;;done
+     [current]
+     (let [internal? (< 0 n (dec bound))
+           lb (cond (= n (dec bound))  slack ;;have to distribute remainder.
+                    internal? 1 ;;internal, have to distribute 1.
+                    :else               0)]
+       (->> (for [i (range lb (+ slack (if internal? 2 1)))] ;;internal gets 1 for free.
+              (let [enxt (conj evens i)
+                    snxt (if internal?
+                           (- slack (dec i)) ;;padded already added.
+                           (- slack i))
+                    viable  (viable? original (count current) i (nth odds n 0))]
+                (when viable
+                  (let [dots       (dots i)
+                        new-string (if (< n (dec bound))
+                                     (str current dots (pounds (nth odds n)))
+                                     (str current dots))]
+                    (gen state bound enxt snxt (inc n) new-string)))))
+            (apply concat)))))
+  ([{:keys [length odds original slack bound] :as state}]
+   (gen state bound [] slack 0 "")))
+
+#_
+(def res (vec (gen {:length 12 :odds [3 2 1] :original "?###????????"} 4 [] 4 0 "")))
+
+
+(defn solve1 [txt]
+  (->> txt
+       parse-input
+       (map gen)
+       (map count)
+       (reduce +)))
+
+;;part2
+
+;;naive unfolding...
+;;probably fails.
+
+(defn unfold [ln n]
+  (let [[l r] (s/split ln #" ")
+        l (s/join "?" (repeat n l))
+        r (s/join "," (repeat n r))]
+    (str l " " r)))
+
+(defn solve2 [ n txt]
+  (->> txt
+       s/split-lines
+       (map #(unfold % n))
+       (map parse-line)
+       (map gen)
+       (map count)
+       (reduce +)))
+
+(defn compare [n txt]
+  (->> txt
+       s/split-lines
+       (map #(unfold % n))
+       (map parse-line)
+       (map gen)
+       (map count)
+       (reduce +)))
+
+(defn folds [n ln]
+  (for [i (range 1 (inc n))]
+    (parse-line (unfold ln i))))
