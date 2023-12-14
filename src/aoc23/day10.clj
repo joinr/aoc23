@@ -136,6 +136,7 @@ LJ.LJ")
                 [\L \J] \-
                 [\- \J] \-
                 [\F \|] \|
+                [\7 \7] \L
                 (throw (ex-info "unknown pair" {:in [s1 s2]})))]
     (println [:replacing [s1 \S s2] :with [s1 res s2]])
     res))
@@ -227,3 +228,6 @@ L7JLJL-JLJLJL--JLJ.L"
                   get-path)]
     (->> (hscan ctx path)
          count)))
+
+#_
+(solve2 (u/slurp-resource "day10.txt"))

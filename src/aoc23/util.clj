@@ -1,5 +1,6 @@
 (ns aoc23.util
-  (:require [clojure.java.io :as jio]))
+  (:require [clojure.java.io :as jio])
+  (:import [java.util ArrayDeque]))
 
 (defn slurp-resource [path]
   (slurp (jio/resource path)))
@@ -140,6 +141,18 @@
   (pop-fringe  [fr])
   (push-fringe [fr w nd]))
 
+
+(defrecord mutq [^ArrayDeque q]
+  IFringe
+  (peek-fringe [fr] (.peek q))
+  (pop-fringe [fr] (.poll q) fr)
+  (push-fringe [fr w nd] (.add q nd) fr))
+
+(defn q [& xs]
+  (reduce (fn [acc e]
+            (push-fringe acc (e 0) (e 1)))
+          (mutq. (ArrayDeque.)) xs))
+
 ;;original lame priorityq impl.
 (defrecord minpq [entries]
   IFringe
@@ -251,6 +264,7 @@
             (recur next-state)))
         state))))
 
+
 (defn a* [gr from to h & {:keys [make-fringe on-visit weightf]
                           :or {make-fringe min-pq
                                on-visit identity}}]
@@ -290,6 +304,38 @@
   ([{:keys [found-path] :as state}]
    (when-let [[from to] found-path]
      (recover-first-path state from to))))
+
+(defn branch? [x] (set? x))
+
+(defn backtrack [preds startnode tail-path]
+ (when (seq tail-path)
+    (loop [path          tail-path
+           pending-paths []]
+      (let [node (first path)]
+        (if (= node startnode) [path pending-paths]
+            (let [prior  (get preds node)
+                  prior-node   (if (branch? prior) (first prior) prior)
+                  branch-paths (when (branch? prior)
+                                 (reduce (fn [acc x] (conj acc (cons x path))) [] (rest prior)))]
+              (recur (cons prior-node path)
+                     (reduce (fn [acc x] (conj acc x))  pending-paths branch-paths))))))))
+
+(defn paths 
+  "Given a shortest-path-tree that encodes the predecessors of nodes, yield a 
+   sequence of all the paths from start node to end node."
+  [preds startnode endnode]
+  (map first 
+       (->> (iterate (fn [pair]
+                       (let [current-path  (nth pair 0)
+                             pending-paths (nth pair 1)]
+                         (when (not (empty? pending-paths))
+                           (let [res (backtrack preds startnode 
+                                                (first pending-paths))
+                                 next-path    (nth res 0)
+                                 new-subpaths (nth res 1)]
+                             (vector next-path (into (rest pending-paths) new-subpaths))))))
+                     (backtrack preds startnode (list endnode)))
+            (take-while identity))))
 
 (defn manhattan [w h from to]
   (let [xy1 (idx->xy w h from)

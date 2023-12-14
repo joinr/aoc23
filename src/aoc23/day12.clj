@@ -16,17 +16,15 @@
 
 (defn parse-line [ln]
   (let [[l r]  (s/split ln #" ")
-        odds   (u/read-as-vector r)
+        chunks (u/read-as-vector r)
         length (count l)
-        hashes  (->> odds (reduce +))
-        pads    (dec (count odds))
-        used    (+ hashes pads)
-        slack   (- length used)]
+        hashes  (->> chunks (reduce +))
+        pads    (dec (count chunks))
+        used    (+ hashes pads)]
     {:original l
-     :odds odds
+     :chunks chunks
      :length length
-     :slack slack
-     :bound (inc (count odds))}))
+     :dots   (- length hashes)}))
 
 (defn parse-input [txt]
   (->> txt
@@ -60,68 +58,97 @@
   (.charAt s n))
 
 
-;;for testing
-(defn dots [n]
-  (apply str (repeat  n \.)))
-
-(defn pounds [n]
-  (apply str (repeat  n \#)))
-
-(defn viable? [^String original  ^long idx ^long dots ^long pounds]
+(defn possible? [^String original  ^long idx ^long pounds ^long dots ]
   (let [bound (count original)]
-    (loop [idx idx
-           dots dots
-           pounds pounds]
-      (cond (pos? dots)
-              (let [c (char-at original idx)]
-                (if (or (= c \.) (= c \?))
-                  (recur (unchecked-inc idx)
-                         (unchecked-dec dots)
-                         pounds)
-                  false))
-            (pos? pounds)
+    (if (> (+ pounds dots) bound)
+      false
+      (loop [idx idx
+             dots dots
+             pounds pounds]
+        (cond (= idx bound)
+              (and (zero? pounds) (zero? dots))
+              (pos? pounds)
               (let [c (char-at original idx)]
                 (if (or (= c \#) (= c \?))
                   (recur (unchecked-inc idx)
                          dots
                          (unchecked-dec pounds))
                   false))
-              :else          true))))
+              (pos? dots)
+              (let [c (char-at original idx)]
+                (if (or (= c \.) (= c \?))
+                  (recur (unchecked-inc idx)
+                         (unchecked-dec dots)
+                         pounds)
+                  false))
+              :else          true)))))
 
 (defn gen
-  ([{:keys [length odds original] :as state }  bound evens slack n current]
-   (if (= n bound) ;;done
-     [current]
-     (let [internal? (< 0 n (dec bound))
-           lb (cond (= n (dec bound))  slack ;;have to distribute remainder.
-                    internal? 1 ;;internal, have to distribute 1.
-                    :else               0)]
-       (->> (for [i (range lb (+ slack (if internal? 2 1)))] ;;internal gets 1 for free.
-              (let [enxt (conj evens i)
-                    snxt (if internal?
-                           (- slack (dec i)) ;;padded already added.
-                           (- slack i))
-                    viable  (viable? original (count current) i (nth odds n 0))]
-                (when viable
-                  (let [dots       (dots i)
-                        new-string (if (< n (dec bound))
-                                     (str current dots (pounds (nth odds n)))
-                                     (str current dots))]
-                    (gen state bound enxt snxt (inc n) new-string)))))
-            (apply concat)))))
-  ([{:keys [length odds original slack bound] :as state}]
-   (gen state bound [] slack 0 "")))
+  [s dots chunks idx]
+   (if (= s "")
+     (if (or (neg? dots) (seq chunks))
+       0
+       1)
+     (case (char-at s 0)
+       \. (if (pos? dots)
+            (gen (subs s 1) (dec dots) chunks (inc idx))
+            0)
+       \# (if-let [n (nth chunks 0 nil)]
+            (let [added-dot (if (= (count chunks) 1) 0 1)
+                  size      (+ n added-dot)]
+              (if (possible? s 0 n added-dot)
+                (gen (subs s size) (- dots added-dot) (subvec chunks 1)
+                     (+ idx size))
+                0))
+            0)
+       \? (let [l (gen (str \. (subs s 1)) dots chunks idx)
+                r (gen (str \# (subs s 1)) dots chunks idx)]
+            (+ l r)))))
 
-#_
-(def res (vec (gen {:length 12 :odds [3 2 1] :original "?###????????"} 4 [] 4 0 "")))
+(defn gen-cached
+  ([cache s dots chunks idx]
+   (let [store (fn [k v]
+                 (.put ^java.util.Map cache k v)
+                 v)
+         aux (fn aux [s dots chunks idx]
+               (let [k [s dots chunks idx]]
+                 (or (get cache k)
+                   (store k
+                          (if (= s "")
+                            (if (or (neg? dots) (seq chunks))
+                              0
+                              1)
+                            (case (char-at s 0)
+                              \. (if (pos? dots)
+                                   (aux (subs s 1) (dec dots) chunks (inc idx))
+                                   0)
+                              \# (if-let [n (nth chunks 0 nil)]
+                                   (let [added-dot (if (= (count chunks) 1) 0 1)
+                                         size      (+ n added-dot)]
+                                     (if (possible? s 0 n added-dot)
+                                       (aux (subs s size) (- dots added-dot) (subvec chunks 1)
+                                            (+ idx size))
+                                       0))
+                                   0)
+                              \? (let [l (aux (str \. (subs s 1)) dots chunks idx)
+                                       r (aux (str \# (subs s 1)) dots chunks idx)]
+                                   (+ l r))))))))]
+     (aux s dots chunks idx)))
+  ([s dots chunks idx] (gen-cached (java.util.HashMap.) s dots chunks idx)))
 
+(defn solve [{:keys [original chunks length dots] :as in}]
+  (gen original dots chunks 0))
+(defn solve-cached [{:keys [original chunks length dots] :as in}]
+  (gen-cached original dots chunks 0))
 
 (defn solve1 [txt]
   (->> txt
-       parse-input
-       (map gen)
-       (map count)
+       s/split-lines
+       (map parse-line)
+       (map solve-cached)
        (reduce +)))
+
+#_(solve1 (u/slurp-resource "day12.txt"))
 
 ;;part2
 
@@ -134,24 +161,113 @@
         r (s/join "," (repeat n r))]
     (str l " " r)))
 
-(defn solve2 [ n txt]
-  (->> txt
-       s/split-lines
-       (map #(unfold % n))
-       (map parse-line)
-       (map gen)
-       (map count)
-       (reduce +)))
+(defn solve2 [txt]
+   (->> txt
+        s/split-lines
+        (map #(unfold % 5))
+        (map parse-line)
+        (map solve-cached)
+        (reduce +)))
 
-(defn compare [n txt]
-  (->> txt
-       s/split-lines
-       (map #(unfold % n))
-       (map parse-line)
-       (map gen)
-       (map count)
-       (reduce +)))
+;;obe
+;; (defn chunk-neighbor [original {:keys [chunks dots idx total]}]
+;;   (when-let [c (first chunks)]
+;;     (let [added-dot (if (> (count chunks) 1)
+;;                       1
+;;                       0)
+;;           size (+ c added-dot)]
+;;       (when (and (<= size total) (<= added-dot dots)
+;;                  (possible? original idx c added-dot ))
+;;         [size  {:chunks (subvec chunks 1)
+;;                 :dots   (- dots added-dot)
+;;                 :idx    (+ idx size)
+;;                 :total  (- total size)}]))))
 
-(defn folds [n ln]
-  (for [i (range 1 (inc n))]
-    (parse-line (unfold ln i))))
+;; (defn dot-neighbors [original {:keys [chunks dots total idx]}]
+;;   (let [dot-bound  (- dots (dec (count chunks)))]
+;;     (for [i (range 1 (inc dot-bound))
+;;           :when (and (<= i  total)
+;;                      (possible? original idx 0 i ))]
+;;       [i {:chunks chunks
+;;           :dots  (- dots i)
+;;           :total (- total i)
+;;           :idx   (+ idx i)}])))
+
+;; (defn all-neighbors [original init]
+;;   (into (if-let [chnk (chunk-neighbor original init)]
+;;           [chnk]
+;;           [])
+;;         (dot-neighbors original init)))
+
+#_#_
+(def hard "?###???????? 3,2,1")
+(def hard-txt "?###????????")
+
+
+
+;; (defn first-path [res]
+;;   (let [[from to] (res :found-path)]
+;;     (let [xs (first (u/paths (res :spt) from to))]
+;;       {:txt (render-path xs) :nodes xs})))
+
+;; (defn all-paths [res]
+;;   (let [[from to] (res :found-path)]
+;;     (->> (u/paths (res :spt) from to)
+;;          (map render-path))))
+
+#_
+(defn as-chunk [{:keys [original odds length]}]
+  (let [used (reduce + odds)]
+    {:chunks odds
+     :dots  (- length used)
+     :total length
+     :idx 0}))
+
+;; ;;now we iterate.
+;; (defn bellman-ford [original  from & {:keys [make-fringe on-visit]
+;;                                       :or {make-fringe u/q
+;;                                            on-visit identity}}]
+;;   (let [init {:spt  {from from}
+;;               :dist {from 0}
+;;               :v    {from 1}
+;;               :fringe (make-fringe [0 from])}]
+;;     (loop
+;;         [{:keys [spt dist fringe v] :as state} init]
+;;       (if-let [source (u/peek-fringe fringe)]
+;;         (if (= (source :total) 0)
+;;           (assoc state :found-path [from source])
+;;           (let [_ (on-visit source)
+;;                 _ (when (and (v source)
+;;                              (not= source from))
+;;                     (println [:visited2x! source])
+;;                     (throw (ex-info "badvisit" {:in state})))
+;;                 vnew (let [preds (spt source)
+;;                            ;_ (println [:src source :preds preds :v v])
+;;                            pred-val  (if (set? preds)
+;;                                        (->> preds
+;;                                                            (map v)
+;;                                                            (reduce +))
+;;                                                       (v preds))
+;;                            ;               _ (println [:pred-val pred-val])
+;;                            ]
+;;                                      pred-val)
+;;                               vnxt (assoc v source vnew)
+;;                             ;  _ (println [:vnxt vnxt])
+;;                               sinks      (all-neighbors original source)
+;;                               next-state (reduce (fn [acc [w sink]]
+;;                                                    (u/relax acc source sink w))
+;;                                                  (update state :fringe u/pop-fringe)
+;;                                                  sinks)]
+;;                           (recur (assoc next-state :v vnxt))))
+;;                       state))))
+
+;; (defn render-path [xs]
+;;   (->> xs
+;;        (partition 2 1)
+;;        (map (fn [[l r]]
+;;               (let [dots (- (l :dots) (r :dots))]
+;;                 (if (= (l :chunks) (r :chunks))
+;;                   (dot-chars dots)
+;;                   (str (pound-chars (-> l :chunks first))
+;;                        (dot-chars dots))))))
+;;        (apply str)))
