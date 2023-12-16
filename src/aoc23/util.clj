@@ -18,6 +18,11 @@
 (defn braces [s]
   (enclose s \{))
 
+(defn splice [^String s  start ^String sub]
+  (let [l (subs s 0 start)
+        end (+ (.length sub) start)]
+    (str l sub (subs s end (.length s)))))
+
 (defn read-as-vector [txt]
   (-> txt
       brackets
@@ -34,6 +39,45 @@
         res
         (let [res (f x)
               _ (.put cache x res)]
+          res)))))
+
+(defn memo-2 [f]
+  (let [^java.util.HashMap xs (java.util.HashMap.)]
+    (fn [x y]
+      (if-let [^java.util.HashMap ys (.get xs x)]
+        (if-let [res (.get ys y)]
+          res
+          (let [res (f x y)]
+            (do (.put ys y res)
+                res)))
+        (let [res     (f x y)
+              ys    (doto (java.util.HashMap.)
+                      (.put y res))
+              _     (.put xs x ys)]
+          res)))))
+
+(defn memo-3 [f]
+  (let [^java.util.HashMap xs (java.util.HashMap.)]
+    (fn [x y z]
+      (if-let [^java.util.HashMap ys (.get xs x)]
+        (if-let [^java.util.HashMap zs (.get ys y)]
+          (if-let [res (.get zs z)]
+            res
+            (let [res (f x y z)]
+              (do (.put zs z res)
+                  res)))
+          (let [res     (f x y z)
+                zs      (doto (java.util.HashMap.)
+                          (.put z res))
+                _     (.put ys y zs)]
+            res))
+          ;;no ys
+        (let [res   (f x y z)
+              zs    (doto (java.util.HashMap.)
+                      (.put z res))
+              ys (doto (java.util.HashMap.)
+                   (.put y zs))
+              _  (.put xs x ys)]
           res)))))
 
 (defn float= [l r]

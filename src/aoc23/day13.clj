@@ -56,15 +56,11 @@
             (for [i (range 0 span)]
               (let [lidx (- l i)
                     ridx  (+ r i)]
-                (or (= (fs lidx) (fs ridx))
-                    (do ; (println [:not=freq lidx ridx (fs lidx) (fs ridx)])
-                      false))))
+                (= (fs lidx) (fs ridx))))
             (for [i (range 0 span)]
               (let [lidx (- l i)
                     ridx  (+ r i)]
-                (or  (= (xs lidx) (xs ridx))
-                     (do ; (println [:not= lidx ridx (cs lidx) (cs ridx)])
-                       false)))))
+                (= (xs lidx) (xs ridx)))))
            (every? identity)))))
 
 
