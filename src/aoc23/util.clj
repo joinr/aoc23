@@ -18,6 +18,9 @@
 (defn braces [s]
   (enclose s \{))
 
+(defn unwrap [s]
+  (subs s 1 (dec (count s))))
+
 (defn splice [^String s  start ^String sub]
   (let [l (subs s 0 start)
         end (+ (.length sub) start)]
@@ -91,7 +94,7 @@
          n# ~n]
      (loop ~bindings
        (if (< (swap! limit# inc) n#)
-         ~@body
+         (do  ~@body)
          (println [:exceded-limit])))))
 
 (def ^:dynamic *logging* nil)
@@ -106,6 +109,8 @@
          (println ~msg))
        ~@expr))
 
+(defn restv [v]
+  (subvec v 1))
 
 (definterface I2D
   (getEntry ^long [^long r ^long c])
@@ -216,6 +221,13 @@
                    (let [res (compare (l 0) (r 0))]
                      (if-not (zero? res) res
                              (compare (l 1) (r 1)))))) xs)))
+
+(defn min-pq-by [entry-key & xs]
+  (minpq. (into (sorted-set-by
+                 (fn [l r]
+                   (let [res (compare (l 0) (r 0))]
+                     (if-not (zero? res) res
+                             (compare (entry-key (l 1)) (entry-key (r 1))))))) xs)))
 
 ;;playing with indexed priority queue to see if we do better.
 (defrecord minidxq [entries known]
