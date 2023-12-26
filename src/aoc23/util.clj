@@ -35,6 +35,23 @@
   (reduce-kv (fn [acc k v]
             (assoc acc k (fkv k v))) m m))
 
+(defn vmerge [f l r]
+  (reduce-kv (fn [acc k v]
+               (assoc acc k (f v (r k)))) l r))
+(defn v+ [l r] (vmerge + l r))
+
+(defn center-xy [xys]
+  (let [n (double (count xys))]
+    (->> xys (reduce v+ [0.0 0.0]) (mapv #(/ % n)))))
+
+;;not necessary, and fails on concave polygons.
+(defn counter-clockwise
+  ([xys [x0 y0]]
+   (->> (for [[x y] xys]
+          [x y  (Math/atan2 (- y y0) (- x x0))])
+        (sort-by (fn [xyt] (xyt 2)))))
+  ([xys] (counter-clockwise xys (u/center-xy xys))))
+
 (defn memo-1 [f]
   (let [^java.util.HashMap cache (java.util.HashMap.)]
     (fn [x]

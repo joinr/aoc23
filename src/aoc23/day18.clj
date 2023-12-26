@@ -29,7 +29,7 @@ U 2 (#7a21e3)")
               (let [[d n color] (s/split s #" ")]
                 {:dir (first d)
                  :n (parse-long n)
-                 color (u/unwrap color)})))))
+                 :color (u/unwrap color)})))))
 
 
 ;;screen space coordinates.
@@ -90,6 +90,7 @@ U 2 (#7a21e3)")
          (map (fn [[x y]]
                 [(- x l) (- y d)])))))
 
+;;works on sample, fails on full.  crapping out to picks...
 (defn hsweep [coords]
   (let [rows (->> (group-by second coords)
                   (sort-by key)
@@ -123,3 +124,69 @@ U 2 (#7a21e3)")
                            (str x "," y)))
                     (s/join " "))]
     (s/replace svg-template "POINTS" points)))
+
+(defn abs [x]
+  (if (neg? x) (- x) x))
+(defn shoelace [xys]
+  (-> (->> (concat xys [(first xys)])
+           (partition 2 1)
+           (reduce (fn [[l r] [[x1 y1] [x2 y2]]] ;;determinants
+                     [(+ l (* x1 y2))
+                      (+ r (* x2 y1))]) [0 0])
+           (apply -))
+      abs #_Math/abs ;;precision screwed us.
+      (/ 2)))
+
+;;ugh screw this.
+;;shoelace gives us the area of the interior of the polygon.
+;;pick relates that to the integer constraints.
+
+;;A=I + (B / 2) - 1
+;;we know B, we can compute A, we don't know I.
+;;so I = A - (B / 2) + 1
+;;total = I + B
+;;I + B = A - (B / 2) + 1 + B
+;;I + B = A + B - (B / 2) + 1
+;;I + B = A + (B / 2) + 1
+
+
+;;need to compute perimeter without expanding points.
+(defn solve1 [txt]
+  (let [ins (->> txt
+                 parse-input)
+        pts (trace ins)
+        a (shoelace pts)
+        b (->> ins (map :n) (reduce +))
+        i (+ 1 (- a (/ b 2)))]
+    (+ i b)))
+
+
+;;part2
+
+(defn read-number [txt]
+  (->>(subs txt 1 (dec (count txt)))
+      (str "0x")
+      read-string))
+
+(defn read-dir [txt]
+  (case (nth txt (dec (count txt)))
+    \0 \R
+    \1 \D
+    \2 \L
+    \3 \U))
+
+(defn parse-input2 [txt]
+  (->> txt
+       parse-input
+       (map (fn [{:keys [color]}]
+              {:dir (read-dir color)
+               :n   (read-number color)}))))
+
+(defn solve2 [txt]
+  (let [ins (->> txt
+                 parse-input2)
+        pts (trace ins)
+        a (shoelace pts)
+        b (->> ins (map :n) (reduce +))
+        i (+ 1 (- a (/ b 2)))]
+    (+ i b)))
