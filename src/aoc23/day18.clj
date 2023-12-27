@@ -46,69 +46,6 @@ U 2 (#7a21e3)")
                       dy (* dy n)]
                   [(+ x dx) (+ y dy)])) [0 0] xs))
 
-(defn extents [xs]
-  (reduce (fn [[l r] x] [(min l x) (max r x)]) [Long/MAX_VALUE Long/MIN_VALUE] xs))
-
-(defn expand [xs]
-  (->> (concat xs [(first xs)])
-       (partition 2 1)
-       (map (fn [[[x1 y1] [x2 y2]]]
-              (let [dx (- x2 x1)
-                    dy (- y2 y1)]
-                (if (zero? dx)
-                  (for [y (range y1 (+ y1 dy) (if (pos? dy) 1 -1))]
-                    [x1 y])
-                  (for [x (range x1 x2 (if (pos? dx) 1 -1))]
-                    [x y1])))))
-       (apply concat)))
-
-;;lame.
-(defn bounds [pairs]
-  {:x (extents (map first pairs))
-   :y (extents (map second pairs))})
-
-(defn gather-points [xs]
-  (->> xs
-       (reduce (fn [{:keys [acc prev inside?] :as state} x]
-                 ;;(println [state x])
-                 (cond
-                   (not prev) (assoc state :prev x :inside? true :acc 1)
-                   inside?   (let [between (dec (- x prev))
-                                   #_#__ (println [:accumulating between :from prev x])]
-                               (if (zero? between)
-                                 (assoc state :prev x :inside? true  :acc (+ acc 1))
-                                 (assoc state :prev x :inside? false   :acc (+ acc between 1))))
-                   :else (assoc state :prev x :inside? true  :acc (inc acc))))
-               {:acc 0 :prev nil :inside? false})
-       :acc))
-
-(defn normalize [xs]
-  (let [{:keys [x y]} (bounds xs)
-        [l r] x
-        [d u] y]
-    (->> xs
-         (map (fn [[x y]]
-                [(- x l) (- y d)])))))
-
-;;works on sample, fails on full.  crapping out to picks...
-(defn hsweep [coords]
-  (let [rows (->> (group-by second coords)
-                  (sort-by key)
-                  (mapv (fn [[k xs]]
-                          [k (->> xs (map first) sort)])))]
-    (for [[r xs] rows]
-      [(gather-points xs) [r xs]])))
-
-(defn solve1 [txt]
-  (->> txt
-       parse-input
-       trace
-       normalize
-       expand
-       hsweep
-       (map first)
-       (reduce +)))
-
 
 (def svg-template
   "<svg width=\"1000\" height=\"1000\" xmlns=\"http://www.w3.org/2000/svg\">
@@ -190,3 +127,69 @@ U 2 (#7a21e3)")
         b (->> ins (map :n) (reduce +))
         i (+ 1 (- a (/ b 2)))]
     (+ i b)))
+
+
+;;failed raycasting solution (works on test case)
+;;revisit.
+;; (defn extents [xs]
+;;   (reduce (fn [[l r] x] [(min l x) (max r x)]) [Long/MAX_VALUE Long/MIN_VALUE] xs))
+
+;; (defn expand [xs]
+;;   (->> (concat xs [(first xs)])
+;;        (partition 2 1)
+;;        (map (fn [[[x1 y1] [x2 y2]]]
+;;               (let [dx (- x2 x1)
+;;                     dy (- y2 y1)]
+;;                 (if (zero? dx)
+;;                   (for [y (range y1 (+ y1 dy) (if (pos? dy) 1 -1))]
+;;                     [x1 y])
+;;                   (for [x (range x1 x2 (if (pos? dx) 1 -1))]
+;;                     [x y1])))))
+;;        (apply concat)))
+
+;; ;;lame.
+;; (defn bounds [pairs]
+;;   {:x (extents (map first pairs))
+;;    :y (extents (map second pairs))})
+
+;; (defn gather-points [xs]
+;;   (->> xs
+;;        (reduce (fn [{:keys [acc prev inside?] :as state} x]
+;;                  ;;(println [state x])
+;;                  (cond
+;;                    (not prev) (assoc state :prev x :inside? true :acc 1)
+;;                    inside?   (let [between (dec (- x prev))
+;;                                    #_#__ (println [:accumulating between :from prev x])]
+;;                                (if (zero? between)
+;;                                  (assoc state :prev x :inside? true  :acc (+ acc 1))
+;;                                  (assoc state :prev x :inside? false   :acc (+ acc between 1))))
+;;                    :else (assoc state :prev x :inside? true  :acc (inc acc))))
+;;                {:acc 0 :prev nil :inside? false})
+;;        :acc))
+
+;; (defn normalize [xs]
+;;   (let [{:keys [x y]} (bounds xs)
+;;         [l r] x
+;;         [d u] y]
+;;     (->> xs
+;;          (map (fn [[x y]]
+;;                 [(- x l) (- y d)])))))
+
+;; ;;works on sample, fails on full.  crapping out to picks...
+;; (defn hsweep [coords]
+;;   (let [rows (->> (group-by second coords)
+;;                   (sort-by key)
+;;                   (mapv (fn [[k xs]]
+;;                           [k (->> xs (map first) sort)])))]
+;;     (for [[r xs] rows]
+;;       [(gather-points xs) [r xs]])))
+
+;; (defn solve1 [txt]
+;;   (->> txt
+;;        parse-input
+;;        trace
+;;        normalize
+;;        expand
+;;        hsweep
+;;        (map first)
+;;        (reduce +)))
