@@ -31,6 +31,12 @@
       brackets
       clojure.edn/read-string))
 
+(defn read-as-keys [txt]
+  (-> txt
+      brackets
+      clojure.edn/read-string
+      (mapv (comp keyword name))))
+
 (defn map-kv [fkv m]
   (reduce-kv (fn [acc k v]
             (assoc acc k (fkv k v))) m m))
@@ -50,7 +56,7 @@
    (->> (for [[x y] xys]
           [x y  (Math/atan2 (- y y0) (- x x0))])
         (sort-by (fn [xyt] (xyt 2)))))
-  ([xys] (counter-clockwise xys (u/center-xy xys))))
+  ([xys] (counter-clockwise xys (center-xy xys))))
 
 (defn memo-1 [f]
   (let [^java.util.HashMap cache (java.util.HashMap.)]
