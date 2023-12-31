@@ -90,7 +90,7 @@
               (let [[source sinks] (s/split ln #" -> ")
                     sinks          (u/read-as-keys  sinks)]
                 (case source
-                  "broadcaster" [:broadcaster {:type :echo :sinks sinks}]
+                  "broadcaster" [:broadcaster {:type :echo :sinks sinks :id :broadcaster}]
                   (let [c  (nth source 0)
                         id (keyword (subs source 1))]
                   (case (nth source 0)
@@ -108,7 +108,7 @@
 (defn label-output [net]
   (reduce-kv (fn [acc id {:keys [sinks] :as nd}]
                (if-not sinks
-                 (assoc acc id (assoc nd :type :output :sinks [] :high 0 :low 0))
+                 (assoc acc id (assoc nd :id id :type :output :sinks [] :high 0 :low 0))
                  acc)) net net))
 
 (defn init-memory [net]
@@ -121,32 +121,34 @@
 
 (def emptyq clojure.lang.PersistentQueue/EMPTY)
 
+;;helps us hook into the pulse processing.
+(def ^:dynamic *on-event* nil)
+
 (defn broadcast
-  ([net  remaining low hi]
+  ([net  remaining low hi on-event]
    (if-let [nxt (peek remaining)]
      (let [from   (nxt 0)
            parent (nxt 1)
            evt    (nxt 2)
            nd     (net parent)
-           #_#_
-           _ (println [:handling nxt #_nd])
            lnew (if (= evt :low) (inc low) low)
-           hnew (if (= evt :high) (inc hi) hi)]
+           hnew (if (= evt :high) (inc hi) hi)
+           _ (when on-event (on-event nxt))]
        (if-let [change (handle from (net parent) evt)]
          (let [sinks  (nd :sinks)
                newnd  (change 0)
-               newevt (change 1)
-               #_#__ (println [:changed change])]
+               newevt (change 1)]
            (recur (if newnd (assoc net parent newnd) net)
                   (->> sinks
                        (mapv (fn [snk] [parent snk newevt]))
                        (into (pop remaining)))
                   lnew
-                  hnew))
-         (recur net (pop remaining) lnew hnew)))
+                  hnew
+                  on-event))
+         (recur net (pop remaining) lnew hnew on-event)))
      {:low low :high hi :net net}))
   ([net evt]
-   (broadcast net (conj emptyq [:button :broadcaster evt]) 0 0)))
+   (broadcast net (conj emptyq [:button :broadcaster evt]) 0 0 *on-event*)))
 
 (defn push-n [net n]
   (reduce (fn [{:keys [low high net]} idx]
@@ -167,3 +169,52 @@
             (push-n 1000))]
     (* high low)))
 
+;;util for creating trivial graph format for visualizing in yEd.
+(defn tgf [net]
+  (let [ks   (zipmap (keys net) (range))
+        nodes (for [[id nd] net]
+                (str (ks id) " " (name id) #_#_" " (nd :type)))
+        edges (for [{:keys [id sinks]} (vals net)
+                    snk sinks]
+                (str (ks id) " "  (ks snk) " " (str (-> snk net :type))))]
+    (spit "blah.tgf" (str (s/join \newline nodes) "\n#\n" (s/join \newline edges)))))
+
+
+;;kind of jank!
+(defn watch-high [net nodes]
+  (let [continue   (atom true)
+        n          (atom 0)
+        found      (atom {})]
+    (binding [*on-event* (fn [[from to evt]]
+                           (when (and (nodes from)
+                                      (= evt :high))
+                             (let [fnd @found]
+                               (when-not (fnd from)
+                                 (let [new-found (assoc fnd from @n)]
+                                   (reset! found new-found)
+                                   (when (= (count new-found) (count nodes))
+                                     (reset! continue false)))))))]
+      (let [res  (->> net
+                      (iterate (fn [net]
+                                 (swap! n inc)
+                                 (-> net (broadcast :low) :net)))
+                      (take-while (fn [_] @continue))
+                      last)]
+        (merge res {:found @found})))))
+
+
+
+;;can determine how often cycling occurs for predecessors.
+;;from there, use lcm to determine how many presses have to
+;;occur before all are on -> implies the conj will trigger a
+;;low pulse.
+
+(defn solve2 [txt]
+  (let [net  (->> txt parse-net)
+        terminal (net :rx)
+        pred     (first (terminal :sources))
+        gates (-> pred net :sources)]
+    (->> (watch-high net (set gates))
+         :found
+         vals
+         (apply u/lcm))))

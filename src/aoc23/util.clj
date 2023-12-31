@@ -32,10 +32,10 @@
       clojure.edn/read-string))
 
 (defn read-as-keys [txt]
-  (-> txt
-      brackets
-      clojure.edn/read-string
-      (mapv (comp keyword name))))
+  (->> txt
+       brackets
+       clojure.edn/read-string
+       (mapv (comp keyword name))))
 
 (defn map-kv [fkv m]
   (reduce-kv (fn [acc k v]
@@ -57,6 +57,14 @@
           [x y  (Math/atan2 (- y y0) (- x x0))])
         (sort-by (fn [xyt] (xyt 2)))))
   ([xys] (counter-clockwise xys (center-xy xys))))
+
+
+;;https://github.com/morrxy/4clojure/blob/master/problem/100.Least%20Common%20Multiple.clj
+(defn lcm  [& x]
+  (let
+      [gcd (fn gcd [a b] (if (= 0 b) a (gcd b (mod a b))))
+       lcm (fn lcm [a b] (/ (* a b) (gcd a b)))]
+    (reduce lcm x)))
 
 (defn memo-1 [f]
   (let [^java.util.HashMap cache (java.util.HashMap.)]
